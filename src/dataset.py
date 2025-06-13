@@ -5,9 +5,24 @@ from .utils import fetch_ocr
 
 COLS = ["word_id","position","char","x-box","y-box","width","height","pixels"]  # truncated
 
+import pandas as pd
+from pathlib import Path
+from .utils import fetch_ocr
+
+def _load_raw():
+    path = Path(fetch_ocr())
+    raw = pd.read_csv(
+        path,
+        compression="gzip",
+        delim_whitespace=True,
+        header=None,
+        comment="#",
+    )
+    return raw
+
 class OCRDataset:
     def __init__(self, split="train", n_train=2500, window=3, seed=0):
-        raw = pd.read_csv(fetch_ocr(), sep=" ", header=None, comment="#")
+        raw = _load_raw()
         raw.columns = COLS + list(range(128))  # 16×8 =128 pixels
         rng = np.random.default_rng(seed)
         word_ids = raw["word_id"].unique()
