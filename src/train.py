@@ -10,7 +10,8 @@ def run(args):
     for epoch in range(args.epochs):
         mistakes = 0
         for word in tqdm.tqdm(train.words, desc=f"Epoch {epoch}"):
-            mistakes += model.update(word["X"], [ord(c)-97 for c in word["y"]])
+            y_true = word["y"].astype(int).tolist()
+            mistakes += model.update(word["X"], y_true)
         print(f"Epoch {epoch}: mistakes={mistakes}")
     # evaluation
     correct, total = 0,0
