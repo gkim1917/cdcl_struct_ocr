@@ -19,10 +19,13 @@ class StructPerceptron:
         return self.decoder.decode(scores)
 
     def update(self, X, y_true):
-        y_pred = self.predict(X)
-        if y_pred != y_true.tolist():
-            for pos,(yt,yp) in enumerate(zip(y_true, y_pred)):
+        # ensure y_true is a list, no matter what came in
+        y_true = list(y_true)
+
+        y_pred = self.predict(X)          # already a list
+        if y_pred != y_true:              # <— compare directly
+            for pos, (yt, yp) in enumerate(zip(y_true, y_pred)):
                 self.W[yt] += self.lr * X[pos]
                 self.W[yp] -= self.lr * X[pos]
-            return 1  # mistake
+            return 1  # made a mistake
         return 0
