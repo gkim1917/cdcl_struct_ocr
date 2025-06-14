@@ -1,6 +1,7 @@
 # src/train.py
 import argparse
 import numpy as np
+import time
 import tqdm
 from collections import Counter
 from .dataset import OCRDataset
@@ -26,13 +27,15 @@ def run(args):
     
     # Initialize model
     model = StructPerceptron(
-        feat_dim=args.feat_dim,
+        feat_dim=train.words[0]["X"].shape[1],
         L=26,
         lr=args.lr,
         sat_infer=args.sat_test
     )
     best_acc, best_W = -1, None
     dev_acc_history = []
+    wps_hist = []
+
     patience_counter = 0
     best_epoch = 0
 
@@ -48,20 +51,26 @@ def run(args):
         train_words = train.words.copy()
         np.random.shuffle(train_words)
         
+        epoch_start = time.time()
         mistakes = char_ok = char_total = 0
 
         for word in tqdm.tqdm(train_words, desc=f"Epoch {epoch}"):
             X, y_true = word["X"], word["y"].astype(int).tolist()
             
             mistakes += model.update(X, y_true)
-
             y_pred = model.predict(X)
             char_ok     += sum(p == t for p, t in zip(y_pred, y_true))
             char_total  += len(y_true)
         
         word_acc  = 1 - mistakes / len(train_words)
         char_acc  = char_ok / char_total
-        print(f"Epoch {epoch}: word_acc={word_acc:.3f}  char_acc={char_acc:.3f}  lr={model.lr:.4f}")
+
+        sec = time.time() - epoch_start
+        wps = len(train.words) / sec
+        wps_hist.append(wps)
+
+        print(f"Epoch {epoch:02d} │ word_acc={word_acc:.3f} "
+              f"char_acc={char_acc:.3f} │ {wps:.1f}  w/s")
 
         # More frequent evaluation for better monitoring
         if epoch % 1 == 0:  # evaluate every epoch
@@ -97,10 +106,12 @@ def run(args):
     print(f"Best epoch: {best_epoch}")
     print(f"Dev char-accuracy: {final_acc:.4f}")
     
+    
     # Save results
     np.save("experiments/final_W.npy", model.W)
     np.save("experiments/final_T.npy", model.T)
-    np.save("experiments/dev_acc_history.npy", np.asarray(dev_acc_history))
+    np.save(args.hist_out, np.asarray(dev_acc_history))
+    np.save(args.wps_out, np.array(wps_hist)) 
     
     # Additional analysis
     analyze_predictions(test, model, limit=20)
@@ -197,4 +208,6 @@ if __name__ == "__main__":
     p.add_argument("--patience", type=int, default=10)  # early stopping patience
     p.add_argument("--sat_test", action="store_true",
                help="use SAT decoding for dev/test")
+    p.add_argument("--hist_out", default="experiments/dev_acc_history.npy")
+    p.add_argument("--wps_out",  default="experiments/wps_history.npy")
     run(p.parse_args())

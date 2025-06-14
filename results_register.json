@@ -1,0 +1,12 @@
+{
+    "Greedy-W3":   ["experiments/hist_w3.npy",   "experiments/hist_w3_wps.npy"],
+    "Greedy-W7":   ["experiments/hist_w7.npy",   "experiments/hist_w7_wps.npy"],
+    "Subset-1k":   ["experiments/hist_n1k.npy",  "experiments/hist_n1k_wps.npy"],
+    "Subset-4k":   ["experiments/hist_n4k.npy",  "experiments/hist_n4k_wps.npy"],
+    "Feat-1022":   ["experiments/hist_f1022.npy","experiments/hist_f1022_wps.npy"],
+  
+    "SAT-unary":   ["experiments/dev_acc_history.npy",  "experiments/wps_history.npy"],
+    "SAT-bigram":  ["experiments/dev_acc_history.npy",  "experiments/wps_history.npy"],
+  
+    "CRF":         ["experiments/dev_acc_crf.npy", "experiments/wps_crf.npy"]
+  }

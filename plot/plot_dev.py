@@ -1,45 +1,46 @@
 #plot/plot_dev.py
 import argparse
 from pathlib import Path
-
-import matplotlib.pyplot as plt
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 def main(args):
-    hist_path = Path(args.hist)
-    if not hist_path.is_file():
-        raise FileNotFoundError(f"Cannot find history file: {hist_path}")
+    acc = np.load(Path(args.hist))
+    wps = np.load(Path(args.wps))
 
-    acc = np.load(hist_path)  # 1-D array of dev accuracies
+    # -- safeguard ---------------------------------------------------------
+    if len(acc) != len(wps):
+        print(f"[plot_dev] ⚠  length mismatch acc={len(acc)} vs wps={len(wps)} – trimming.")
+        k = min(len(acc), len(wps))
+        acc, wps = acc[:k], wps[:k]
+
     epochs = np.arange(len(acc))
 
-    plt.figure(figsize=(6, 4))
-    plt.plot(epochs, acc, marker="o", lw=1.8)
-    plt.title("Greedy dev accuracy vs. epoch")
-    plt.xlabel("Epoch")
-    plt.ylabel("Dev char-accuracy")
-    plt.grid(alpha=0.3)
+    fig, ax1 = plt.subplots(figsize=(6,4))
+    ax1.plot(epochs, acc, marker='o', lw=2, label='Dev char-acc')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Dev char-accuracy')
+    ax1.grid(alpha=0.3)
+
+    ax2 = ax1.twinx()
+    ax2.plot(epochs, wps, '--', color='grey', label='Words/sec')
+    ax2.set_ylabel('Words per second', color='grey')
+    ax2.tick_params(axis='y', colors='grey')
+
+    # combine legends
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='lower right')
+
     plt.tight_layout()
-
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=150)
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(args.out, dpi=150)
     plt.close()
-
-    print(f"Plot saved to {out_path.resolve()}")
-
+    print(f"Plot saved to {Path(args.out).resolve()}")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--hist",
-        default="experiments/dev_acc_history.npy",
-        help="Path to the saved NumPy array with dev accuracies",
-    )
-    ap.add_argument(
-        "--out",
-        default="docs/dev_accuracy.png",
-        help="Where to write the PNG plot",
-    )
+    ap.add_argument("--hist", default="experiments/dev_acc_history.npy")
+    ap.add_argument("--wps",  default="experiments/wps_history.npy")
+    ap.add_argument("--out",  default="docs/dev_accuracy_wps.png")
     main(ap.parse_args())
