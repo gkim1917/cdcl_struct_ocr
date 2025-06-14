@@ -1,5 +1,7 @@
 # CDCL Structured OCR/POS
 
+![Dev learning curve](docs/dev_accuracy.png)
+
 ### Overview
 This repository contains an end‑to‑end pipeline for SAT‑based structured prediction on the classic OCR letter‑sequence benchmark.  We train a unary–bigram structured perceptron and decode either with
 
@@ -35,10 +37,13 @@ cdcl_struct_ocr/
 ├── LICENSE
 ├── requirements.txt
 ├── experiments/
+│   ├── dev_acc_history.npy
 │   ├── final_W.npy
 │   └── final_T.npy
 ├── docs/
 │   └── dev_accuracy.png
+├── plot/
+│   └── plot_dev.py
 ├── src/
 │   ├── __init__.py
 │   ├── train.py

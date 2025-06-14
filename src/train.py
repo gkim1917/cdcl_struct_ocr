@@ -32,6 +32,7 @@ def run(args):
         sat_infer=args.sat_test
     )
     best_acc, best_W = -1, None
+    dev_acc_history = []
     patience_counter = 0
     best_epoch = 0
 
@@ -65,6 +66,7 @@ def run(args):
         # More frequent evaluation for better monitoring
         if epoch % 1 == 0:  # evaluate every epoch
             dev_acc = eval_dev(test, model, limit=1000)  # larger sample
+            dev_acc_history.append(dev_acc)   # record for the plot
             print(f"  Dev greedy char-acc: {dev_acc:.3f}")
             
             if dev_acc > best_acc:
@@ -98,6 +100,7 @@ def run(args):
     # Save results
     np.save("experiments/final_W.npy", model.W)
     np.save("experiments/final_T.npy", model.T)
+    np.save("experiments/dev_acc_history.npy", np.asarray(dev_acc_history))
     
     # Additional analysis
     analyze_predictions(test, model, limit=20)
