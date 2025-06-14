@@ -1,123 +1,169 @@
 # src/dataset.py
 import numpy as np
 import pandas as pd
-import warnings
+from collections import defaultdict
 from pathlib import Path
 from .utils import fetch_ocr
 
 PIXELS = 128
-
-ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-CHAR2IDX = {c: i for i, c in enumerate(ALPHABET)}          # 'A'→0 … 'Z'→25
-CHAR2IDX.update({c.lower(): i for c, i in CHAR2IDX.items()})
+DUP_CAP = 20
+STAT = 16
 
 def _label_to_id_scalar(v):
-    """
-    Map a single OCR label to integer 0-25.
+    # direct character conversion 'a' - 'z'
+    try:
+        vs = str(v).strip().lower()
+        if len(vs) == 1 and 'a' <= vs <= 'z':
+            return ord(vs) - ord('a')
+    except Exception:
+        pass
 
-    • Accepts: single char 'A'..'Z'/'a'..'z', ASCII code, or already-numeric 0-25.
-    • Returns: int in [0, 25]  OR  -1 if the label is unrecognised.
-    """
-    # 1️⃣  Already numeric?
+    # numeric forms
     try:
         iv = int(v)
-        if 0 <= iv <= 25:
-            return iv
-        # Some datasets store ASCII code (e.g. 65 = 'A')
-        if 65 <= iv <= 90:
-            return iv - 65
-        if 97 <= iv <= 122:
+        if 97 <= iv <= 122:  # 'a' to 'z'
             return iv - 97
-    except (ValueError, TypeError):
+        if 65 <= iv <= 90:   # 'A' to 'Z'
+            return iv - 65
+        if 0 <= iv <= 25:    # already 0–25
+            return iv
+        if 1 <= iv <= 26:    # 1–26 → 0–25
+            return iv - 1
+    except Exception:
         pass
 
-    # 2️⃣  Single-character string?
-    try:
-        vs = str(v).strip()  # Remove whitespace
-        if len(vs) == 1 and vs in CHAR2IDX:
-            return CHAR2IDX[vs]
-    except:
-        pass
-
-    # 3️⃣  Otherwise unrecognised
+    # Unrecognized
     return -1
 
-
-def _labels_to_ids(arr):
-    """Convert array of labels to IDs, filtering out unknown labels"""
-    vec_map = np.vectorize(_label_to_id_scalar, otypes=[int])
-    ids = vec_map(arr)
-    return ids
+vec_label_to_id = np.vectorize(_label_to_id_scalar, otypes=[int])
 
 class OCRDataset:
-    def __init__(self, split="train", n_train=2500, window=3, seed=0):
-        # ---------- 1. load & name columns ----------
+    def __init__(self, *, split="train", n_train=2500, window=1, seed=0, mu_sigma=None, dup_cap=DUP_CAP):
+        # ---------- load data with correct format ----------
+        self.split   = split
+        self.window  = window
+        self.rng     = np.random.default_rng(seed)
+
+        # ------------------ load raw CSV ------------------
         path = Path(fetch_ocr())
-        n_cols = 6 + PIXELS                      # 6 meta + 128 pixels = 134
-        names = (
-            ["word_id", "position", "label", "fold", "x_box", "y_box"]
-            + [f"p{i}" for i in range(PIXELS)]
-        )
-        raw = pd.read_csv(
-            path,
-            compression="gzip",
-            sep=r"\s+",           # whitespace-split
-            header=None,
-            names=names,
-            comment="#",
-        )
+        raw  = pd.read_csv(path, compression="gzip", sep=r"\s+",
+                           header=None, comment="#")
+        if raw.shape[1] != 134:
+            raise ValueError("Unexpected #cols=%d (expect 134)" % raw.shape[1])
 
-        # ---------- 2. normalise labels -------------
-        raw["label_id"] = _labels_to_ids(raw["label"].to_numpy())
+        col_names = (['letter_id', 'letter', 'next_id',
+                      'word_id', 'position', 'fold'] +
+                     [f'stat_{i}'  for i in range(STAT)] +
+                     [f'pixel_{i}' for i in range(112)])
+        raw.columns = col_names
 
-        # Drop rows whose label_id == -1 (unrecognised) AND ensure we keep word integrity
-        valid_mask = raw["label_id"] >= 0
-        
-        # Get word_ids that have ALL valid labels
-        word_validity = raw.groupby("word_id")["label_id"].apply(lambda x: (x >= 0).all())
-        valid_word_ids = word_validity[word_validity].index
-        
-        # Keep only complete valid words
-        raw = raw[raw["word_id"].isin(valid_word_ids)]
-        
-        n_dropped = len(raw) - valid_mask.sum()
-        if n_dropped > 0:
-            warnings.warn(f"Dropped {n_dropped} rows with unknown labels or incomplete words.")
+        stat_cols  = [f'stat_{i}'  for i in range(STAT)]
+        pixel_cols = [f'pixel_{i}' for i in range(112)]
 
-        # ---------- 3. split train / test -----------
-        rng = np.random.default_rng(seed)
-        word_ids = raw["word_id"].unique()
-        rng.shuffle(word_ids)
-        
-        # Ensure we have enough words for both train and test
-        if len(word_ids) < n_train:
-            warnings.warn(f"Only {len(word_ids)} words available, requested {n_train} for training.")
-            n_train = min(n_train, len(word_ids) // 2)  # Use half for training if not enough
-        
-        train_set = set(word_ids[:n_train])
-        mask = raw["word_id"].isin(train_set) if split == "train" else ~raw["word_id"].isin(train_set)
-        self.df = raw.loc[mask]
-        
-        print(f"{split.capitalize()} set: {len(self.df)} samples from {len(self.df['word_id'].unique())} words")
+        for i in range(len(pixel_cols), PIXELS):
+            col = f'pixel_{i}'
+            raw[col] = 0.0
+            pixel_cols.append(col)
 
-        self.window = window
-        self.pixel_cols = [f"p{i}" for i in range(PIXELS)]
-        self.build_sequences()
+        self.feat_cols = stat_cols + pixel_cols
 
-    def build_sequences(self):
+        raw["label_id"] = vec_label_to_id(raw["letter"].to_numpy())
+        raw = raw[raw["label_id"] >= 0]
+        
+        # ensure each word has only valid labels
+        good_words = (raw.groupby("word_id")["label_id"]
+                         .apply(lambda x: (x >= 0).all()))
+        raw = raw[raw["word_id"].isin(good_words[good_words].index)]
+
+        # ------------------ train/test split ------------------
+        spell_per_id = {}                      # word_id → spelling
+        for wid, grp in raw.groupby("word_id"):
+            spell = ''.join(chr(97 + v) for v in grp["label_id"].to_numpy())
+            spell_per_id[wid] = spell
+
+        # group ids by spelling
+        ids_by_spell = defaultdict(list)
+        for wid, spell in spell_per_id.items():
+            ids_by_spell[spell].append(wid)
+
+        spellings = list(ids_by_spell.keys())
+        self.rng.shuffle(spellings)
+
+        train_ids, test_ids = [], []
+        for sp in spellings:
+            ids = ids_by_spell[sp]
+            self.rng.shuffle(ids)
+            train_ids.extend(ids[:dup_cap])
+            test_ids.extend(ids[dup_cap:])
+
+        # trim/pad train_ids to exactly n_train
+        if len(train_ids) > n_train:
+            self.rng.shuffle(train_ids)
+            test_ids.extend(train_ids[n_train:])
+            train_ids = train_ids[:n_train]
+        elif len(train_ids) < n_train:
+            short = n_train - len(train_ids)
+            train_ids.extend(test_ids[:short])
+            test_ids  = test_ids[short:]
+
+        train_set = set(train_ids)
+        mask = raw["word_id"].isin(train_set) if split == "train" \
+               else ~raw["word_id"].isin(train_set)
+
+        self.df = raw[mask].copy()
+
+        if split == "train":
+            X_full = self.df[self.feat_cols].to_numpy(np.float32)
+            self.mu = X_full.mean(axis=0, keepdims=True)
+            self.sig = X_full.std(axis=0, keepdims=True)
+            self.sig[self.sig == 0] = 1.0
+        else:
+            if mu_sigma is None:
+                raise ValueError("Pass mu_sigma from the train split!")
+            self.mu, self.sig = mu_sigma
+
+        # ------------------ build word sequences ------------------
         self.words = []
-        for _, grp in self.df.groupby("word_id"):
-            grp = grp.sort_values("position")
-            X = grp[self.pixel_cols].to_numpy(dtype=np.float32) / 255.0
-            y = grp["label_id"].to_numpy(dtype=np.int8)
+        pad_len = window // 2
+        pad = np.zeros((pad_len, len(self.feat_cols)), dtype=np.float32)
 
-            # Verify all labels are valid
-            if np.any(y < 0) or np.any(y > 25):
-                warnings.warn(f"Invalid labels found in word {grp['word_id'].iloc[0]}: {y}")
+        for wid, grp in self.df.groupby("word_id"):
+            grp = grp.sort_values("position")
+            X = grp[self.feat_cols].to_numpy(np.float32)
+            X = (X - self.mu) / self.sig          # z-score
+            y = grp["label_id"].to_numpy(np.int8)
+
+            if len(y) < 2 or len(y) > 20:
                 continue
 
-            if self.window > 1:
-                pad = np.zeros((self.window // 2, PIXELS), dtype=X.dtype)
-                X = np.vstack([pad, X, pad])
+            if window > 1:
+                base_dim = len(self.feat_cols)
+                X_seq = []
+                for i in range(len(y)):
+                    neigh = []
+                    for d in range(-pad_len, pad_len+1):
+                        idx = i + d
+                        if 0 <= idx < len(X):
+                            neigh.append(X[idx])
+                        else:
+                            neigh.append(np.zeros(base_dim, dtype=X.dtype))
+                    X_seq.append(np.concatenate(neigh, axis=0))
+                X = np.vstack(X_seq)
+                pos_idx = np.arange(len(y))              # 0,1,2,…,len-1
+                pos_clip = np.clip(pos_idx, 0, 9)        # bucket positions ≥9 into the last bin
+                pos_feat = np.eye(10, dtype=X.dtype)[pos_clip]   # shape (n,10)
 
-            self.words.append({"X": X, "y": y})
+                X = np.hstack([X, pos_feat])             # new dim = old dim + 10
+            else:
+                pass
+
+            self.words.append({"word_id": wid, "X": X, "y": y})
+
+        # -------------- debug prints ------------------
+        print(f"Raw word lengths: {[len(word['y']) for word in self.words[:10]]}")
+        print(f"{split.capitalize()} set: {len(self.df)} samples from "
+              f"{len(self.words)} words (distinct spellings ≈ {len(ids_by_spell)})")
+        if self.words:
+            sample = [''.join(chr(97+l) for l in w['y']) for w in self.words[:10]]
+            print("Sample words:", sample)
+

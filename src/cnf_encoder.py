@@ -1,28 +1,54 @@
-# src/cnf_encoder.py
-from pysat.formula import CNF
+# cnf_encoder.py
+import itertools
+import numpy as np
+from pysat.formula import WCNF
+
 
 class CNFEncoder:
-    def __init__(self, alphabet="abcdefghijklmnopqrstuvwxyz"):
-        self.alphabet = alphabet
-        self.L = len(alphabet)
+    """
+    Ultra-light CNF / Max-SAT encoder.
 
-    def var(self, i, l):
-        """1-based DIMACS variable ID for position i, label index l."""
-        return i*self.L + l + 1
+    • Variables are positive integers 1, 2, 3, … (DIMACS style)
+    • Soft clauses get a finite weight
+    • Hard clauses get weight = topw (PySAT convention)
+    """
 
-    def encode_word(self, n, invalid_bigrams=None):
-        cnf = CNF()
-        # 4.a Exactly-one per position
-        for i in range(n):
-            # At least one
-            cnf.append([self.var(i,l) for l in range(self.L)])
-            # At most one  (pairwise encoding)
-            for l1 in range(self.L):
-                for l2 in range(l1+1, self.L):
-                    cnf.append([-self.var(i,l1), -self.var(i,l2)])
-        # 4.b Bigram constraints (optional)
-        if invalid_bigrams:
-            for i in range(n-1):
-                for (l1,l2) in invalid_bigrams:
-                    cnf.append([-self.var(i,l1), -self.var(i+1,l2)])
-        return cnf
+    def __init__(self):
+        self.reset()
+    
+    # ---------- low-level helpers ----------
+    def reset(self):
+        self.next_var = 1       # DIMACS vars start at 1
+        self.wcnf = WCNF()
+
+    def new_var(self):
+        v = self.next_var
+        self.next_var += 1
+        return v
+    
+    def _canon(self, lits):
+        if isinstance(lits, (int, np.integer)):
+            return [int(lits)]
+        return [int(l) for l in lits]
+
+    def _append(self, lits, weight):
+        self.wcnf.append(self._canon(lits), weight=weight)
+
+    # ---------- clause helpers ----------
+    def add_soft(self, clause, weight):
+        self._append(clause, weight=weight)
+
+    def add_hard(self, clause):
+        self._append(clause, weight=self.wcnf.topw) 
+
+    # ---------- composite constraints ----------
+    def exactly_one(self, vars_):
+        # at least one
+        self.add_hard(list(vars_))
+        # at most one  (pairwise)
+        for i, j in itertools.combinations(vars_, 2):
+            self.add_hard([-i, -j])
+
+    # ---------- final CNF ----------
+    def to_wcnf(self):
+        return self.wcnf
