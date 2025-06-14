@@ -15,7 +15,7 @@ Recent additions (May 2025) include:
 
 - Data‑imbalance handling via DUP_CAP and z‑score normalisation.
 
-## Dev accuracy (window 5, n_train 2500):
+### Dev accuracy (window 5, n_train 2500):
        decoder       |      char‑accuracy
 ---------------------------------------------
         Greedy       |       ≈ 0.715
@@ -55,15 +55,15 @@ PYTHONPATH=$PWD python -m src.train \
 To run greedy/viterbi evaluation:
 ```
 PYTHONPATH=$PWD python tests/greedy_eval.py \
-    --weights submission/checkpoints/final_W.npy \
+    --weights submission/final_W.npy \
     --n_train 2500 --window 5 --feat_dim 730
 ```
 ### 3. SAT evaluation
 To run sat evaluation:
 ```
 PYTHONPATH=$PWD python tests/sat_eval.py \
-    --weights submission/checkpoints/final_W.npy \
-    --bigrams submission/checkpoints/final_T.npy \
+    --weights submission/final_W.npy \
+    --bigrams submission/final_T.npy \
     --n_train 2500 --window 5 --feat_dim 730
 ```
 
@@ -73,9 +73,9 @@ PYTHONPATH=$PWD python tests/sat_eval.py \
 - Bigram matrix T — learned by perceptron updates; rewards frequent letter pairs.
 
 - SAT formulationVariables v_{i,l} (choose label l at pos i) and optional z_{i,l,q} (choose bigram l→q)
-- - Hard clauses: exactly‑one per position; linking z → v.
-- - Soft clauses: maximise unaries & bigram rewards (converted to costs for RC2).
-- - Pruning: skip transitions T[l,q] < T_max − τ (τ = 2.0 by default).
+    - Hard clauses: exactly‑one per position; linking z → v.
+    - Soft clauses: maximise unaries & bigram rewards (converted to costs for RC2).
+    - Pruning: skip transitions T[l,q] < T_max − τ (τ = 2.0 by default).
 
 Implementation lives in src/sat_infer.py and passes tests/test_sat.py.
 
