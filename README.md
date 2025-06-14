@@ -154,6 +154,6 @@ MIT License — see LICENSE file.
 
 ## Contact
 
-G. Kim  ·  gkim@ucsd.edu   ·  COGS 185 Spring 2025
+G. Kim  ·  guk001@ucsd.edu   ·  COGS 185 Spring 2025
 
 
