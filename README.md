@@ -16,10 +16,10 @@ Recent additions (May 2025) include:
 - Data‑imbalance handling via DUP_CAP and z‑score normalisation.
 
 ### Dev accuracy (window 5, n_train 2500):
-       decoder       |      char‑accuracy
----------------------------------------------
-        Greedy       |       ≈ 0.715
-     SAT (pruned)    |       ≈ 0.713 (2 s)
+| Decoder | Window | Features | Dev char-acc |
+|---------|--------|----------|--------------|
+| Greedy  | 5      | 730-dim  | 0.715 |
+| SAT (unary + bigram) | 5 | 730-dim | **0.713** |
 
 
 ## Installation
@@ -30,17 +30,26 @@ pip install -r requirements.txt
 ```
 
 ## Repo Structure
-.
+cdcl_struct_ocr/
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── experiments/
+│   ├── final_W.npy
+│   └── final_T.npy
+├── docs/
+│   └── dev_accuracy.png
 ├── src/
-│   ├── dataset.py        # data loader & normalisation
-│   ├── models.py         # structured perceptron
-│   ├── cnf_encoder.py    # ultra‑light CNF / Max‑SAT encoder
-│   ├── sat_infer.py      # SAT/Max‑SAT decoder
-│   └── train.py          # training script
-├── tests/                # unit & dev‑set evaluators
-├── submission/
-│   └── checkpoints/      # saved weights for reproduction
-└── requirements.txt
+│   ├── __init__.py
+│   ├── train.py
+│   ├── models.py
+│   ├── cnf_encoder.py
+│   ├── sat_infer.py
+│   └── dataset.py
+├── tests/
+│   ├── greedy_eval.py
+│   └── sat_eval.py
+└── data/   ← (git-ignored, fetched automatically)
 
 
 ## Usage 
